@@ -7,6 +7,7 @@ import random
 import math
 import numpy as np
 from difflib import SequenceMatcher
+import countries
 load_dotenv()
 
 
@@ -33,10 +34,10 @@ def get_street_view_image(lat, lng, api_key, num_images=36, size='1920x1080'):
             print("Error fetching image:", response.status_code)
 
 
-def req_location():
-    def req():
-        response = requests.get('https://hiveword.com/papi/random/locationNames', params='')
-        try: _ = response.json()[0]['country']
+def req_city(country):
+    def req(country):
+        response = requests.get('https://hiveword.com/papi/random/locationNames', params={'country':country})
+        try: _ = response.json()[0]['name']
         except: return None
         return response                
 
@@ -47,7 +48,7 @@ def req_location():
             print('REQUEST BROKEN')
             quit()
             
-        response = req()
+        response = req(country)
         if response:
             return response
 
@@ -201,9 +202,9 @@ class Location:
 
     @staticmethod
     def create_location():
-        data = req_location().json()
+        country = random.choice(countries.country_dict.keys())
+        data = req_city().json()
         city = data[0]['name']
-        country = data[0]['country']
         try:
             _ = Location.make_picture(Location.get_coordinates(city))
         except:
