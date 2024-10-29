@@ -11,14 +11,28 @@ import countries
 load_dotenv()
 
 
-def get_street_view_image(lat, lng, api_key, num_images=36, size='1920x1080'):
+def check_street_view(city, api_key):
+    url = f"https://maps.googleapis.com/maps/api/streetview/metadata?key={api_key}&location={city}"
+    response = requests.get(url)
+    if(response.status_code == 200):
+        if(response.json()["status"]=="OK"):
+            return True
+    else:
+        raise Exception("Error checking street view location")
+        
+    return False
+
+def get_street_view_image(city, api_key, num_images=36, size='1920x1080'):
+    if(not check_street_view(city, api_key)):
+        return False
+    
     base_url = "https://maps.googleapis.com/maps/api/streetview"
     headings = [i * (360 / num_images) for i in range(num_images)]
 
     for index, heading in enumerate(headings):
         params = {
             'size': size, 
-            'location': f"{lat},{lng}", 
+            'location': city,
             'heading': heading, 
             'key': api_key
         }
@@ -32,6 +46,8 @@ def get_street_view_image(lat, lng, api_key, num_images=36, size='1920x1080'):
                 f.write(response.content)
         else:
             print("Error fetching image:", response.status_code)
+
+    return True
 
 
 def req_city(country):
@@ -55,7 +71,6 @@ def req_city(country):
 
 
 def distance_formula_haversine(coordinates):
-    
     la1, lo1 = coordinates[0]
     la2, lo2 = coordinates[1]
     
@@ -95,8 +110,6 @@ class Game:
         self.difficultys = ['very easy', 'easy', 'medium', 'hard']
 
         self.state = GameState()
-
-
     
     def hint_params(self, hints):
         cat = random.choice(self.categorys)
@@ -139,7 +152,7 @@ class Game:
             print("Wrong answer!")
             self.state.guesses_left -= 1
 
-            coordinates = [Location.get_coordinates(location.country), Location.get_coordinates(answer)]
+            coordinates = [Location.get_coordinates(countries.country_dict[location.country][0]), Location.get_coordinates(answer)]
             if None not in coordinates:
                 distance = distance_formula_haversine(coordinates)
                 print(f'You are {round(distance)}km away')
@@ -149,8 +162,9 @@ class Game:
     def __show_hint(self):
         location = self.state.location
         hint = location.generate_fact(self.hint_params(self.state.hints_left))['response']
-        if location.country in hint:
-            hint = hint.replace(location.country, '______')
+        for i, synonym in enumerate(countries.country_dict[location.country]):
+            if synonym in hint:
+                hint = hint.replace(synonym, '______')
         
         print(hint)
 
@@ -178,7 +192,7 @@ class Game:
                 break
                 
             
-        print(f'The country was {self.state.location.country}')
+        print(f'The country was {countries.country_dict[self.state.location.country][0]}')
         print(f"You got {self.state.points} points\n\n")
 
 class GameState:
@@ -202,15 +216,16 @@ class Location:
 
     @staticmethod
     def create_location():
-        country = random.choice(countries.country_dict.keys())
-        data = req_city().json()
+        country = random.choice(list(countries.country_dict.keys()))
+        data = req_city(country).json()
         city = data[0]['name']
-        try:
-            _ = Location.make_picture(Location.get_coordinates(city))
-        except:
+
+        if(Location.make_picture(city)):
+            return Location(city, country)
+        else:
             return Location.create_location()
 
-        return Location(city, country)
+        
               
         
     @staticmethod
@@ -226,22 +241,22 @@ class Location:
         return None
     
     @staticmethod
-    def make_picture(coordinates):
+    def make_picture(city):
         api_key = os.getenv('API_KEY')
-        get_street_view_image(coordinates[0], coordinates[1], api_key=api_key, num_images=1)
-        return None
+        return get_street_view_image(city, api_key=api_key, num_images=1)
 
     def generate_fact(self, params):
         category, difficulty = params
         url = 'http://localhost:11434/api/generate' 
-        data = {"model": "llama3.2","prompt": f'give me a fact about the country {self.country} in this category: {category}, in the format "this country ...", dont say the name of the country in the fact, the difficulty of this fact should be {difficulty}, the fact should ONLY be in THIS CATEGORY: "{category}", make sure that you dont say the name of the country in the response.', 'stream':False} 
+        data = {"model": "llama3.2","prompt": f'give me a fact about the country {countries.country_dict[self.country][0]} in this category: {category}, in the format "this country ...", dont say the name of the country in the fact, the difficulty of this fact should be {difficulty}, the fact should ONLY be in THIS CATEGORY: "{category}", make sure that you dont say the name of the country in the response.', 'stream':False} 
         print('Generating hint...')
         resp = requests.post(url, json=data).json()
         return resp
 
     def match_country_string(self, string):
-        if (SequenceMatcher(None, string, self.country).ratio() > 0.8):
-            return True
+        for idx, synonym in enumerate(countries.country_dict[self.country]):
+            if (SequenceMatcher(None, string, synonym).ratio() > 0.8):
+                return True
 
         return False
 
