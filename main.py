@@ -26,10 +26,9 @@ def get_street_view_image(lat, lng, api_key, num_images=36, size='1920x1080'):
         response = requests.get(url)
 
         if response.status_code == 200:
-            filename = f'street_view_image_{index}.jpg'
+            filename = f'street_view_image.jpg'
             with open(filename, 'wb') as f:
                 f.write(response.content)
-            print(f"Image saved as '{filename}'")
         else:
             print("Error fetching image:", response.status_code)
 
@@ -97,12 +96,6 @@ class Game:
         self.state = GameState()
 
 
-    def create_location(self):
-        data = req_location().json()
-        city = data[0]['name']
-        country = data[0]['country']
-        return Location(city, country)
-       
     
     def hint_params(self, hints):
         cat = random.choice(self.categorys)
@@ -170,7 +163,7 @@ class Game:
 
     def question_loop(self):
         self.state.reset()
-        self.state.location = self.create_location()
+        self.state.location = Location.create_location()
         print("What country is this?")
 
         while True:
@@ -203,7 +196,21 @@ class GameState:
 class Location:
     def __init__(self, city, country):
         self.city = city
-        self.country = country    
+        self.country = country 
+
+
+    @staticmethod
+    def create_location():
+        data = req_location().json()
+        city = data[0]['name']
+        country = data[0]['country']
+        try:
+            _ = Location.make_picture(Location.get_coordinates(city))
+        except:
+            return Location.create_location()
+
+        return Location(city, country)
+              
         
     @staticmethod
     def get_coordinates(place):
@@ -216,11 +223,16 @@ class Location:
                 return data['lat'], data['lng']
         
         return None
+    
+    @staticmethod
+    def make_picture(coordinates):
+        api_key = os.getenv('API_KEY')
+        get_street_view_image(coordinates[0], coordinates[1], api_key=api_key, num_images=1)
+        return None
 
     def generate_fact(self, params):
         category, difficulty = params
         url = 'http://localhost:11434/api/generate' 
-        print(category)
         data = {"model": "llama3.2","prompt": f'give me a fact about the country {self.country} in this category: {category}, in the format "this country ...", dont say the name of the country in the fact, the difficulty of this fact should be {difficulty}, the fact should ONLY be in THIS CATEGORY: "{category}", make sure that you dont say the name of the country in the response.', 'stream':False} 
         print('Generating hint...')
         resp = requests.post(url, json=data).json()
